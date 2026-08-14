@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { ColumnEntity } from './columns/column.entity';
 import { ContactEntity } from './contacts/contact.entity';
+import { ColumnsModule } from './columns/columns.module';
+import { ContactsModule } from './contacts/contacts.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { ContactEntity } from './contacts/contact.entity';
       entities: [ColumnEntity, ContactEntity],
       synchronize: true,
     }),
+    ColumnsModule,
+    ContactsModule,
   ],
   controllers: [AppController],
 })
