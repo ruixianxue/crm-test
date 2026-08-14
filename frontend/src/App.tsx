@@ -1,9 +1,13 @@
 import { Grid } from './components/Grid/Grid';
+import './App.css';
 
 function App() {
   return (
-    <div>
-      <h1>Rodium CRM</h1>
+    <div className="app">
+      <header className="app-header">
+        <span className="app-logo">Rodium</span>
+        <h1>CRM</h1>
+      </header>
       <Grid />
     </div>
   );
