@@ -48,7 +48,7 @@ async function run() {
         data: {
           name: faker.person.fullName(),
           company: faker.company.name(),
-          phone: faker.phone.number(),
+          phone: `+33 ${faker.string.numeric(1)} ${faker.string.numeric(2)} ${faker.string.numeric(2)} ${faker.string.numeric(2)} ${faker.string.numeric(2)}`,
           signupDate: faker.date.past({ years: 3 }).toISOString().slice(0, 10),
           score: faker.number.int({ min: 0, max: 100 }),
         },
