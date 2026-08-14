@@ -1,0 +1,17 @@
+.grid {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.grid th,
+.grid td {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.grid th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
