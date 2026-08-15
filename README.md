@@ -2,6 +2,10 @@
 
 Full-stack CRM contact management app built as a technical test for Rodium (Full Stack Development Internship). Spreadsheet-style grid with dynamic columns, inline editing, infinite scroll, sorting/filtering, and drag-and-drop column management.
 
+## Video walkthrough
+
+[Presentation video](https://www.loom.com/share/52e5576b83e6430286e090234d85d479)
+
 ## Stack
 
 - **Backend**: NestJS + TypeORM + PostgreSQL, REST API
