@@ -16,7 +16,7 @@ Full-stack CRM contact management app built as a technical test for Rodium (Full
 
 ```bash
 git clone https://github.com/ruixianxue/crm-test.git
-cd rodium-crm
+cd crm-test
 cp .env.example .env
 docker compose up --build
 ```
