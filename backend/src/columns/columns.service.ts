@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ColumnEntity } from './column.entity';
@@ -12,17 +16,31 @@ export class ColumnsService {
     private readonly repo: Repository<ColumnEntity>,
   ) {}
 
+  findAll(): Promise<ColumnEntity[]> {
+    return this.repo.find({ order: { position: 'ASC' } });
+  }
+
   async create(dto: CreateColumnDto): Promise<ColumnEntity> {
     const existing = await this.repo.findOne({ where: { key: dto.key } });
     if (existing) {
       throw new ConflictException(`Column key "${dto.key}" already exists`);
     }
-    const column = this.repo.create(dto);
-    return this.repo.save(column);
-  }
 
-  findAll(): Promise<ColumnEntity[]> {
-    return this.repo.find({ order: { position: 'ASC' } });
+    const maxPos = await this.repo
+      .createQueryBuilder('c')
+      .select('MAX(c.position)', 'max')
+      .getRawOne();
+
+    // Postgres returns aggregate results as strings via getRawOne(),
+    // so cast explicitly to avoid accidental string concatenation (e.g. "4" + 1 -> "41").
+    const currentMax =
+      maxPos?.max !== null && maxPos?.max !== undefined ? Number(maxPos.max) : -1;
+
+    const column = this.repo.create({
+      ...dto,
+      position: dto.position ?? currentMax + 1,
+    });
+    return this.repo.save(column);
   }
 
   async update(id: string, dto: UpdateColumnDto): Promise<ColumnEntity> {
@@ -43,6 +61,9 @@ export class ColumnsService {
     }
     return this.findAll();
   }
+
+  // Used by ContactsService to validate sort/filter keys against real columns
+  // before building dynamic SQL.
   async findByKey(key: string): Promise<ColumnEntity | null> {
     return this.repo.findOne({ where: { key } });
   }

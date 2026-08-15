@@ -6,12 +6,12 @@ import { ContactEntity } from '../contacts/contact.entity';
 
 const CONTACT_COUNT = 500;
 
-const DEFAULT_COLUMNS = [
+const DEFAULT_COLUMNS: Omit<ColumnEntity, 'id' | 'createdAt'>[] = [
   { key: 'name', label: 'Name', type: ColumnType.TEXT, position: 0 },
   { key: 'company', label: 'Company', type: ColumnType.TEXT, position: 1 },
   { key: 'phone', label: 'Phone', type: ColumnType.PHONE, position: 2 },
   { key: 'signupDate', label: 'Signup Date', type: ColumnType.DATE, position: 3 },
-  { key: 'score', label: 'Score', type: ColumnType.NUMBER, position: 4 },
+  { key: 'dealValue', label: 'Deal Value (€)', type: ColumnType.NUMBER, position: 4 },
 ];
 
 async function run() {
@@ -50,7 +50,7 @@ async function run() {
           company: faker.company.name(),
           phone: `+33 ${faker.string.numeric(1)} ${faker.string.numeric(2)} ${faker.string.numeric(2)} ${faker.string.numeric(2)} ${faker.string.numeric(2)}`,
           signupDate: faker.date.past({ years: 3 }).toISOString().slice(0, 10),
-          score: faker.number.int({ min: 0, max: 100 }),
+          dealValue: faker.number.int({ min: 2000, max: 250000 }),
         },
       }),
     );

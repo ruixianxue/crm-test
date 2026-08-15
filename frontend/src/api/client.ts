@@ -14,7 +14,9 @@ export async function apiFetch<T>(
     throw new Error(body.message || `Request failed: ${res.status}`);
   }
 
-  if (res.status === 204) return undefined as T;
-
-  return res.json();
+  // Some responses (e.g. DELETE) may return 200/204 with an empty body.
+  // Reading as text first avoids "Unexpected end of JSON input" on empty responses.
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
