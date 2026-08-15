@@ -1,15 +1,174 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchColumns } from '../../api/columns';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { fetchColumns, createColumn, deleteColumn, updateColumn, reorderColumns } from '../../api/columns';
 import { fetchContacts, updateContact } from '../../api/contacts';
 import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import { Cell } from './Cell';
-import { ColumnManager } from '../ColumnManager/ColumnManager';
-import type { Column, Contact } from '../../types';
+import type { Column, ColumnType, Contact } from '../../types';
 import './Grid.css';
 
 const PAGE_SIZE = 50;
+const COLUMN_TYPES: ColumnType[] = ['text', 'number', 'date', 'phone'];
 
 type SortDir = 'ASC' | 'DESC' | null;
+
+function SortableHeaderCell({
+  column,
+  sortBy,
+  sortDir,
+  onSort,
+  onRename,
+  onDelete,
+}: {
+  column: Column;
+  sortBy: string | null;
+  sortDir: SortDir;
+  onSort: (key: string) => void;
+  onRename: (col: Column, label: string) => void;
+  onDelete: (col: Column) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: column.id,
+  });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(column.label);
+
+  function commitRename() {
+    setEditing(false);
+    if (draft.trim() && draft.trim() !== column.label) {
+      onRename(column, draft.trim());
+    } else {
+      setDraft(column.label);
+    }
+  }
+
+  return (
+    <th ref={setNodeRef} style={style} className="header-cell">
+      <div className="header-cell-inner">
+        <span className="drag-handle" {...attributes} {...listeners}>
+          ⠿
+        </span>
+
+        {editing ? (
+          <input
+            className="header-rename-input"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') {
+                setDraft(column.label);
+                setEditing(false);
+              }
+            }}
+          />
+        ) : (
+          <span className="header-label" onClick={() => onSort(column.key)}>
+            {column.label}
+            {sortBy === column.key && (sortDir === 'ASC' ? ' \u2191' : ' \u2193')}
+          </span>
+        )}
+
+        <span className="header-actions">
+          <button
+            type="button"
+            className="header-icon-btn"
+            title="Rename column"
+            onClick={() => setEditing(true)}
+          >
+            &#9998;
+          </button>
+          <button
+            type="button"
+            className="header-icon-btn header-icon-btn-danger"
+            title="Delete column"
+            onClick={() => onDelete(column)}
+          >
+            &times;
+          </button>
+        </span>
+      </div>
+    </th>
+  );
+}
+
+function AddColumnCell({ onAdd }: { onAdd: (input: { key: string; label: string; type: ColumnType }) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const [label, setLabel] = useState('');
+  const [type, setType] = useState<ColumnType>('text');
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    setError(null);
+    if (!key.trim() || !label.trim()) {
+      setError('Key and label required');
+      return;
+    }
+    try {
+      await onAdd({ key: key.trim(), label: label.trim(), type });
+      setKey('');
+      setLabel('');
+      setType('text');
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add column');
+    }
+  }
+
+  if (!open) {
+    return (
+      <th className="add-column-cell">
+        <button type="button" className="add-column-btn" onClick={() => setOpen(true)} title="Add column">
+          +
+        </button>
+      </th>
+    );
+  }
+
+  return (
+    <th className="add-column-cell add-column-cell-open">
+      <div className="add-column-form">
+        {error && <div className="add-column-error">{error}</div>}
+        <input placeholder="key" value={key} onChange={(e) => setKey(e.target.value)} />
+        <input placeholder="Label" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <select value={type} onChange={(e) => setType(e.target.value as ColumnType)}>
+          {COLUMN_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <div className="add-column-form-actions">
+          <button type="button" onClick={handleSubmit}>
+            Add
+          </button>
+          <button type="button" onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </th>
+  );
+}
 
 export function Grid() {
   const [columns, setColumns] = useState<Column[]>([]);
@@ -24,7 +183,8 @@ export function Grid() {
   const [filterBy, setFilterBy] = useState<string | null>(null);
   const [filterValue, setFilterValue] = useState('');
 
-  // Load columns; exposed so ColumnManager can trigger a refetch after changes
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
   const loadColumns = useCallback(() => {
     fetchColumns()
       .then(setColumns)
@@ -35,13 +195,12 @@ export function Grid() {
     loadColumns();
   }, [loadColumns]);
 
-  // Reload contacts from the start whenever sort/filter changes
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      setContacts([]); // clear immediately so loadMore can't append stale data mid-transition
-      setHasMore(false); // block loadMore until the new query result is in
+      setContacts([]);
+      setHasMore(false);
       try {
         const res = await fetchContacts({
           offset: 0,
@@ -89,16 +248,10 @@ export function Grid() {
 
   const sentinelRef = useInfiniteScroll(loadMore, !loading && hasMore);
 
-  async function handleCellSave(
-    contact: Contact,
-    columnKey: string,
-    newValue: string | number | null,
-  ) {
+  async function handleCellSave(contact: Contact, columnKey: string, newValue: string | number | null) {
     const previousContacts = contacts;
     setContacts((prev) =>
-      prev.map((c) =>
-        c.id === contact.id ? { ...c, data: { ...c.data, [columnKey]: newValue } } : c,
-      ),
+      prev.map((c) => (c.id === contact.id ? { ...c, data: { ...c.data, [columnKey]: newValue } } : c)),
     );
     try {
       await updateContact(contact.id, { [columnKey]: newValue });
@@ -108,7 +261,7 @@ export function Grid() {
     }
   }
 
-  function handleHeaderClick(columnKey: string) {
+  function handleSort(columnKey: string) {
     if (sortBy !== columnKey) {
       setSortBy(columnKey);
       setSortDir('ASC');
@@ -120,22 +273,75 @@ export function Grid() {
     }
   }
 
+  async function handleRename(column: Column, newLabel: string) {
+    try {
+      await updateColumn(column.id, newLabel);
+      loadColumns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename column');
+    }
+  }
+
+  async function handleDelete(column: Column) {
+    if (!confirm(`Delete column "${column.label}"? This cannot be undone.`)) return;
+    try {
+      await deleteColumn(column.id);
+      if (sortBy === column.key) {
+        setSortBy(null);
+        setSortDir(null);
+      }
+      if (filterBy === column.key) {
+        setFilterBy(null);
+        setFilterValue('');
+      }
+      loadColumns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete column');
+    }
+  }
+
+  async function handleAddColumn(input: { key: string; label: string; type: ColumnType }) {
+    await createColumn(input);
+    loadColumns();
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = columns.findIndex((c) => c.id === active.id);
+    const newIndex = columns.findIndex((c) => c.id === over.id);
+    const reordered = arrayMove(columns, oldIndex, newIndex);
+    setColumns(reordered); // optimistic: reflect new order immediately
+    try {
+      await reorderColumns(reordered.map((c, index) => ({ id: c.id, position: index })));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reorder columns');
+      loadColumns(); // roll back to server truth on failure
+    }
+  }
+
   if (error) return <div>Error: {error}</div>;
 
   return (
-    <div>
-      <ColumnManager columns={columns} onChange={loadColumns} />
-
-      <div className="grid-wrapper">
+    <div className="grid-wrapper">
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table className="grid">
           <thead>
             <tr>
-              {columns.map((col) => (
-                <th key={col.id} onClick={() => handleHeaderClick(col.key)} className="sortable">
-                  {col.label}
-                  {sortBy === col.key && (sortDir === 'ASC' ? ' \u2191' : ' \u2193')}
-                </th>
-              ))}
+              <SortableContext items={columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+                {columns.map((col) => (
+                  <SortableHeaderCell
+                    key={col.id}
+                    column={col}
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    onRename={handleRename}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </SortableContext>
+              <AddColumnCell onAdd={handleAddColumn} />
             </tr>
             <tr>
               {columns.map((col) => (
@@ -151,6 +357,7 @@ export function Grid() {
                   />
                 </th>
               ))}
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -164,17 +371,18 @@ export function Grid() {
                     onSave={(newValue) => handleCellSave(contact, col.key, newValue)}
                   />
                 ))}
+                <td />
               </tr>
             ))}
           </tbody>
         </table>
-        {loading && <div className="grid-status">Loading...</div>}
-        <div ref={sentinelRef} style={{ height: 1 }} />
-        {loadingMore && <div className="grid-status">Loading more...</div>}
-        {!hasMore && !loading && contacts.length > 0 && (
-          <div className="grid-status">All contacts loaded ({contacts.length})</div>
-        )}
-      </div>
+      </DndContext>
+      {loading && <div className="grid-status">Loading...</div>}
+      <div ref={sentinelRef} style={{ height: 1 }} />
+      {loadingMore && <div className="grid-status">Loading more...</div>}
+      {!hasMore && !loading && contacts.length > 0 && (
+        <div className="grid-status">All contacts loaded ({contacts.length})</div>
+      )}
     </div>
   );
 }
