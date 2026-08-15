@@ -86,14 +86,16 @@ It runs 20+ checks against a live backend instance (columns/contacts CRUD, pagin
 
 ## AI tools used
 
-Claude (Anthropic) was used throughout as a guided, step-by-step coding assistant: I asked for explanations before writing each piece, typed the code myself, and tested before moving on.
+Claude (Anthropic) was used throughout as a guided, step-by-step coding assistant: I asked for explanations before writing each piece, typed the code myself, and tested before moving on — rather than having code generated and pasted wholesale.
 
-- **Explaining the code**: for each new concept (NestJS DI, TypeORM QueryBuilder, JSONB casting, React hooks, dnd-kit, Docker multi-stage builds), I asked for a plain explanation first so I can walk through any part of the codebase.
-- **Justifying choices**: e.g. JSONB + a separate `columns` metadata table for dynamic columns (vs. rigid schema or EAV), offset/limit pagination over cursor-based, single-column filtering as a deliberate scope cut (documented below).
-- **Limitations identified**: session-local sort state, single-column filtering only, no automated frontend tests — all listed under "Known limitations".
-- **Corrected generated code**: a systematic test pass (`test.sh`) caught real bugs, e.g. `POST /columns` returned 500 because Postgres's raw `MAX(position)` came back as a string, so `"4" + 1` concatenated into `"41"` instead of adding to `5` — fixed with an explicit `Number(...)` cast. Also fixed: a DELETE response with an empty body crashing the frontend's `res.json()` call, and unstable default sort order across identical requests (missing `id` tie-breaker).
+**Example prompt**: after the core features were implemented, I asked:
+> "Based on the requirements, walk me through checking and testing everything one by one and build a test script."
 
-Example of a corrected/rejected AI suggestion: the initial column-position calculation (`MAX(position) + 1`) silently used a value returned as a string by PostgreSQL's raw aggregate query, causing `"4" + 1` to concatenate into `"41"` instead of adding to `5` — this passed initial testing but failed under a follow-up systematic test pass, and was fixed by explicitly casting with `Number(...)` before the arithmetic.
+This led to writing `test.sh`, a backend acceptance test script covering CRUD, pagination, sort correctness, filter robustness against invalid input, and reorder persistence. Running it caught real bugs that casual manual testing had missed (see below).
+
+**Example of a rejected/corrected AI suggestion**: my first version of column management used a separate collapsible panel (open it, edit columns in a list, close it) to keep the implementation simple. After trying it, I found the extra click and separation from the table itself made it feel clunky, so I rejected that design and asked for column management (rename, delete, drag-to-reorder, add) to be built directly into the table header instead — closer to how spreadsheet tools actually work. This was a larger rewrite of the `Grid` component, but produced a noticeably better result.
+
+**Corrected generated code**: the same test pass (`test.sh`) caught a real bug — `POST /columns` returned 500 because PostgreSQL's raw `MAX(position)` aggregate came back as a string, so `"4" + 1` concatenated into `"41"` instead of adding to `5`. Fixed by explicitly casting with `Number(...)` before the arithmetic. The same pass also caught a DELETE response with an empty body crashing the frontend's `res.json()` call, and unstable default sort order across identical requests due to a missing `id` tie-breaker.
 
 ## Time spent
 
